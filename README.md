@@ -1,2 +1,2 @@
 # coursera-go
-Решение для задач от первой части курсов на coursera по golang
+Решение для задач с курсов mail.ru по golang на coursera
