@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -9,9 +8,26 @@ import (
 	"log"
 	"os"
 	"strings"
+	"text/template"
 )
 
 // код писать тут
+
+var (
+	outTpl = template.Must(template.New("out").Parse(`
+package {{.}}
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+)
+
+	`))
+)
 
 func main() {
 	fset := token.NewFileSet()
@@ -21,15 +37,7 @@ func main() {
 	}
 
 	out, _ := os.Create(os.Args[2])
-	fmt.Fprintln(out, "package ", node.Name.Name)
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, `import "context"`)
-	fmt.Fprintln(out, `import "fmt"`)
-	fmt.Fprintln(out, `import "net/http"`)
-	fmt.Fprintln(out, `import "net/url"`)
-	fmt.Fprintln(out, `import "strconv"`)
-	fmt.Fprintln(out, `import "strings"`)
-	fmt.Fprintln(out)
+	outTpl.Execute(out, node.Name.Name)
 
 	ast.Inspect(node, func(n ast.Node) bool {
 		switch t := n.(type) {

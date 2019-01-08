@@ -32,7 +32,6 @@ func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "{{.Method}}" {
 		http.Error(w, "error": "bad method", http.StatusNotAcceptable)
 	}
-
 	{{if .Auth -}}
 	// check authorization
 	if r.Header.Get("X-Auth") != "100500" {
@@ -54,8 +53,8 @@ func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 		err := err.(ApiError)
 		http.Error(w, err.Error(), err.HTTPStatus)
 	}	
-	//
-	res, err := srv.{{.Name}}(context.Background(), param)
+	// 
+	res, err := srv.{{.Name}}(context.Background(), *param)
 	if err != nil {
 		err := err.(ApiError)
 		http.Error(w, err.Error(), err.HTTPStatus)
