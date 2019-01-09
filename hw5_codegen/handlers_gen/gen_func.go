@@ -10,19 +10,15 @@ import (
 	"text/template"
 )
 
-type funcData struct {
-	Recv   string
-	Name   string
-	URL    string
-	Method string
-	Auth   bool
-	Param  string
-}
-
-type serveData struct {
-	Recv    string
-	URLs    []string
-	Methods []string
+type methodInfo struct {
+	// from comment
+	URL    string `json:"url"`
+	Auth   bool   `json:"auth,omitempty"`
+	Method string `json:"method,omitempty"`
+	// from reflection
+	Recv  string `json:"recv,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Param string `json:"param,omitempty"`
 }
 
 var (
@@ -73,14 +69,25 @@ func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	`))
 
 	serveHTTP = template.Must(template.New("serve").Parse(`
-	
+func (srv *{{.Recv}}
 	`))
+
+	serveStructs = map[string][]methodInfo{}
 )
 
-type methodInfo struct {
-	URL    string `json:"url"`
-	Auth   bool   `json:"auth"`
-	Method string `json:"method,omitempty"`
+func getFuncReceiver(fn *ast.FuncDecl) string {
+	var result string
+	if fn.Recv != nil {
+		switch t := fn.Recv.List[0].Type.(type) {
+		case *ast.StarExpr:
+			if x, ok := t.X.(*ast.Ident); ok {
+				result = x.Name
+			}
+		case *ast.Ident:
+			result = t.Name
+		}
+	}
+	return result
 }
 
 func genHandler(w io.Writer, fn *ast.FuncDecl, comment string) {
@@ -91,19 +98,6 @@ func genHandler(w io.Writer, fn *ast.FuncDecl, comment string) {
 	}
 	if info.Method == "" {
 		info.Method = http.MethodGet
-	}
-
-	// get receiver type
-	var recvType string
-	if fn.Recv != nil {
-		switch t := fn.Recv.List[0].Type.(type) {
-		case *ast.StarExpr:
-			if x, ok := t.X.(*ast.Ident); ok {
-				recvType = x.Name
-			}
-		case *ast.Ident:
-			recvType = t.Name
-		}
 	}
 
 	// fill params
@@ -122,15 +116,23 @@ func genHandler(w io.Writer, fn *ast.FuncDecl, comment string) {
 		}
 	}
 
-	data := &funcData{
-		Name:   fn.Name.Name,
-		Recv:   recvType,
-		URL:    info.URL,
-		Method: info.Method,
-		Auth:   info.Auth,
-		Param:  paramType,
-	}
+	info.Name = fn.Name.Name
+	info.Recv = getFuncReceiver(fn)
+	info.Param = paramType
 
-	fmt.Printf("%+v\n", data)
-	funcTpl.Execute(w, data)
+	addToServe(*info)
+
+	fmt.Printf("%+v\n", info)
+	funcTpl.Execute(w, info)
+}
+
+func addToServe(info methodInfo) {
+	var infos []methodInfo
+	var ok bool
+	infos, ok = serveStructs[info.Recv]
+	if !ok {
+		infos = make([]methodInfo, 0)
+	}
+	infos = append(infos, info)
+	serveStructs[info.Recv] = infos
 }
