@@ -14,19 +14,7 @@ import (
 // код писать тут
 
 var (
-	outTpl = template.Must(template.New("out").Parse(`
-package {{.}}
-
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-)
-
-	`))
+	outTpl = template.Must(template.ParseFiles("./templates/main.tpl"))
 )
 
 func main() {
@@ -51,6 +39,10 @@ func main() {
 		}
 		return true
 	})
+
+	for _, infos := range serveStructs {
+		serveHTTP.Execute(out, infos)
+	}
 }
 
 func processFunction(w io.Writer, fn *ast.FuncDecl) {

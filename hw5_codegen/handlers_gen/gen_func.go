@@ -21,58 +21,25 @@ type methodInfo struct {
 	Param string `json:"param,omitempty"`
 }
 
-var (
-	funcTpl = template.Must(template.New("func").Parse(`
-func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
-	// check method
-	if r.Method != "{{.Method}}" {
-		http.Error(w, "error": "bad method", http.StatusNotAcceptable)
-	}
-	{{if .Auth -}}
-	// check authorization
-	if r.Header.Get("X-Auth") != "100500" {
-		http.Error(w, "error": "unauthorized", http.StatusForbidden)
-	}
-	{{end -}}
-
-	query := r.URL.Query()
-	param := new({{.Param}})		
-	// bind
-	err := param.bind(query)
-	if err != nil {
-		err := err.(ApiError)
-		http.Error(w, err.Error(), err.HTTPStatus)
-	}
-	// validate
-	err = param.validate()
-	if err != nil {
-		err := err.(ApiError)
-		http.Error(w, err.Error(), err.HTTPStatus)
-	}	
-	// 
-	res, err := srv.{{.Name}}(context.Background(), *param)
-	if err != nil {
-		err := err.(ApiError)
-		http.Error(w, err.Error(), err.HTTPStatus)
-	}
-	// json
-	data, err := json.Marshal(res)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-	// OK
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintln(w, data)
+type serveInfo struct {
+	Recv    string
+	Methods []methodInfo
 }
 
-	`))
-
+var (
+	funcTpl   = template.Must(template.ParseFiles("./templates/func.tpl"))
 	serveHTTP = template.Must(template.New("serve").Parse(`
-func (srv *{{.Recv}}
+func (srv *{{.Recv}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	{{range .Methods -}}
+	case "{{.URL}}": srv.handle{{.Name}}(w, r)
+	{{end -}}
+	default: http.Error(w, "unknown method", http.StatusNotFound)
+	}
+}
 	`))
 
-	serveStructs = map[string][]methodInfo{}
+	serveStructs = map[string]serveInfo{}
 )
 
 func getFuncReceiver(fn *ast.FuncDecl) string {
@@ -128,11 +95,12 @@ func genHandler(w io.Writer, fn *ast.FuncDecl, comment string) {
 
 func addToServe(info methodInfo) {
 	var infos []methodInfo
-	var ok bool
-	infos, ok = serveStructs[info.Recv]
+	serv, ok := serveStructs[info.Recv]
 	if !ok {
 		infos = make([]methodInfo, 0)
+	} else {
+		infos = serv.Methods
 	}
 	infos = append(infos, info)
-	serveStructs[info.Recv] = infos
+	serveStructs[info.Recv] = serveInfo{info.Recv, infos}
 }
