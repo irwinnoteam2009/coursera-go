@@ -34,7 +34,9 @@ func (srv *{{.Recv}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	{{range .Methods -}}
 	case "{{.URL}}": srv.handle{{.Name}}(w, r)
 	{{end -}}
-	default: http.Error(w, "unknown method", http.StatusNotFound)
+	default: 
+	  	body := response{Error: "unknown method"}
+		http.Error(w, body.String(), http.StatusNotFound)
 	}
 }
 	`))
@@ -63,8 +65,9 @@ func genHandler(w io.Writer, fn *ast.FuncDecl, comment string) {
 	if err := json.Unmarshal([]byte(comment), info); err != nil {
 		log.Panicln(err)
 	}
+	// if method not specified, it can use GET and POST
 	if info.Method == "" {
-		info.Method = http.MethodGet
+		info.Method = http.MethodGet + "|" + http.MethodPost
 	}
 
 	// fill params

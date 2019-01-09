@@ -65,7 +65,8 @@ var (
 	`))
 
 	enumTpl = template.Must(template.New("enum").Funcs(fnMap).Parse(`
-	if !strings.Contains("{{.TagValue}}", t.{{.FieldName}}) {
+	// dirty hack for enums
+	if !strings.Contains("|{{.TagValue}}|", "|"+t.{{.FieldName}}+"|") {
 		return ApiError{
 			HTTPStatus: http.StatusBadRequest, 
 			Err: fmt.Errorf("{{lower .FieldName}} must be one of [{{enum .TagValue}}]"),

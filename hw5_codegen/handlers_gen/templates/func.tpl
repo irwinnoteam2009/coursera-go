@@ -1,7 +1,7 @@
 func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	// check method
-	if r.Method != "{{.Method}}" {
-		body := response{Error: "bad error"}
+	if !strings.Contains("{{.Method}}", r.Method) {
+		body := response{Error: "bad method"}
 		http.Error(w, body.String(), http.StatusNotAcceptable)
 		return
 	}
@@ -14,10 +14,17 @@ func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	}
 	{{end -}}
 
-	query := r.URL.Query()
-	param := new({{.Param}})		
-	// bind
-	err := param.bind(query)
+	// bind values. If GET - get from query, if POST - get from form
+	var values url.Values
+	if r.Method == http.MethodGet {
+		values = r.URL.Query()
+	} else {
+		r.ParseForm()
+		values = r.Form
+	}
+	param := new({{.Param}})
+	err := param.bind(values)
+
 	if err != nil {
 		err := err.(ApiError)
 		body := response{Error: err.Error()}
@@ -47,7 +54,6 @@ func (srv *{{.Recv}}) handle{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	body := response{Error: "", Response: res}
-	fmt.Println(">>>>", body)
 	fmt.Fprintln(w, body.String())
 }
 
