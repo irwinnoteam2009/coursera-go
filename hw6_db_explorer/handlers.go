@@ -41,8 +41,8 @@ func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	itemsHandlers := map[string]http.HandlerFunc{
 		http.MethodGet:    db.handlerGetItem,
-		http.MethodPost:   nil,
-		http.MethodDelete: nil,
+		http.MethodPost:   db.handlerUpdateItem,
+		http.MethodDelete: db.handlerDeleteItem,
 	}
 
 	switch r.URL.Path {
@@ -108,7 +108,6 @@ func (db *DbExplorer) handlerGetTables(w http.ResponseWriter, r *http.Request) {
 
 func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request) {
 	table := strings.Trim(r.URL.Path, "/")
-	fmt.Println("handlerGetItemList:", table)
 
 	query := r.URL.Query()
 	sLimit := query.Get(paramLimit)
@@ -141,7 +140,6 @@ func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
 func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(r.URL.Path, "/")
 	arr := strings.Split(path, "/")
-
 	table := arr[0]
 	id := arr[1]
 
@@ -158,6 +156,31 @@ func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
 		Record interface{} `json:"record"`
 	}{
 		Record: item,
+	}
+	handleResponse(w, resp)
+}
+
+func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "update item")
+}
+
+func (db *DbExplorer) handlerDeleteItem(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "delete item")
+	path := strings.Trim(r.URL.Path, "/")
+	arr := strings.Split(path, "/")
+	table := arr[0]
+	id := arr[1]
+
+	i, err := db.deleteItem(table, id)
+	if err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	resp := struct {
+		Deleted int64 `json:"deleted"`
+	}{
+		Deleted: i,
 	}
 	handleResponse(w, resp)
 }

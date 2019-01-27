@@ -145,22 +145,31 @@ func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
 	return nil, errRecordNotFound
 }
 
-func (db *DbExplorer) deleteItem(table, id string) (int, error) {
+func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
 	if err := db.tableExists(table); err != nil {
 		return 0, err
 	}
-	// affected count
-	return 0, nil
+	pk := db.getPK(table)
+	if pk == "" {
+		return 0, nil
+	}
+	query := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", table, pk)
+	result, err := db.db.Exec(query, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-func (db *DbExplorer) createItem(table string, a interface{}) (int, error) {
+func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 	if err := db.tableExists(table); err != nil {
 		return 0, err
 	}
+
 	return 0, nil
 }
 
-func (db *DbExplorer) updateItem(table string, a interface{}) (int, error) {
+func (db *DbExplorer) updateItem(table string, a interface{}) (int64, error) {
 	if err := db.tableExists(table); err != nil {
 		return 0, err
 	}
