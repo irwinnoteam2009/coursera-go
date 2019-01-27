@@ -5,11 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 var (
 	errUnknownTable   = errors.New("unknown table")
 	errRecordNotFound = errors.New("record not found")
+)
+
+const (
+	paramLimit  = "limit"
+	paramOffset = "offset"
 )
 
 type response struct {
@@ -27,11 +34,34 @@ func (r *response) String() string {
 func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	fmt.Println(r.URL.Path)
+	tableHandlers := map[string]http.HandlerFunc{
+		http.MethodGet: db.handlerGetItemList,
+		http.MethodPut: db.handlerAddItem,
+	}
+
+	itemsHandlers := map[string]http.HandlerFunc{
+		http.MethodGet:    nil,
+		http.MethodPost:   nil,
+		http.MethodDelete: nil,
+	}
+
 	switch r.URL.Path {
 	case "/":
 		db.handlerGetTables(w, r)
+	default:
+		path := strings.Trim(r.URL.Path, "/")
+		arr := strings.Split(path, "/")
 
+		switch len(arr) {
+		case 1:
+			if handler, ok := tableHandlers[r.Method]; ok && handler != nil {
+				handler(w, r)
+			}
+		case 2:
+			if handler, ok := itemsHandlers[r.Method]; ok && handler != nil {
+				handler(w, r)
+			}
+		}
 	}
 }
 
@@ -45,6 +75,7 @@ func handleError(w http.ResponseWriter, err error, code int) {
 		return
 	}
 
+	fmt.Println("handleError:", err)
 	http.Error(w, string(b), code)
 }
 
@@ -55,6 +86,7 @@ func handleResponse(w http.ResponseWriter, a interface{}) {
 	b, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Println("handleResponse:", err)
 		return
 	}
 	fmt.Fprintln(w, string(b))
@@ -72,4 +104,36 @@ func (db *DbExplorer) handlerGetTables(w http.ResponseWriter, r *http.Request) {
 		Tables: tables,
 	}
 	handleResponse(w, resp)
+}
+
+func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request) {
+	table := strings.Trim(r.URL.Path, "/")
+	fmt.Println("handlerGetItemList:", table)
+
+	query := r.URL.Query()
+	sLimit := query.Get(paramLimit)
+	sOffset := query.Get(paramOffset)
+	limit, _ := strconv.Atoi(sLimit)
+	offset, _ := strconv.Atoi(sOffset)
+
+	data, err := db.getItemsList(table, limit, offset)
+	if err != nil {
+		if err == errUnknownTable {
+			handleError(w, err, http.StatusNotFound)
+		} else {
+			handleError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	resp := struct {
+		Records []interface{} `json:"records"`
+	}{
+		Records: data,
+	}
+	handleResponse(w, resp)
+}
+
+func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "add item")
 }

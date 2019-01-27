@@ -1,6 +1,14 @@
 package main
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
+
+const (
+	defaultLimit  = 5
+	defaultOffset = 0
+)
 
 // DbExplorer ...
 type DbExplorer struct {
@@ -13,7 +21,16 @@ func NewDbExplorer(db *sql.DB) (*DbExplorer, error) {
 }
 
 func (db *DbExplorer) isTableExists(table string) bool {
-	return true
+	tables, err := db.getTableList()
+	if err != nil {
+		return false
+	}
+	for _, t := range tables {
+		if t == table {
+			return true
+		}
+	}
+	return false
 }
 
 func (db *DbExplorer) getTableList() ([]string, error) {
@@ -26,8 +43,7 @@ func (db *DbExplorer) getTableList() ([]string, error) {
 	tables := make([]string, 0)
 	for rows.Next() {
 		var table string
-		err := rows.Scan(&table)
-		if err != nil {
+		if err := rows.Scan(&table); err != nil {
 			return nil, err
 		}
 		tables = append(tables, table)
@@ -39,7 +55,28 @@ func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface
 	if !db.isTableExists(table) {
 		return nil, errUnknownTable
 	}
-	return nil, nil
+	query := fmt.Sprintf("SELECT * FROM %s LIMIT ?, ?", table)
+	if limit == 0 {
+		limit = defaultLimit
+	}
+	rows, err := db.db.Query(query, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]interface{}, 0)
+	for rows.Next() {
+		item, err := scanStruct(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	fmt.Println("items:", items)
+
+	return items, nil
 }
 
 func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
