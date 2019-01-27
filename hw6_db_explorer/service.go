@@ -20,17 +20,40 @@ func NewDbExplorer(db *sql.DB) (*DbExplorer, error) {
 	return &DbExplorer{db: db}, nil
 }
 
-func (db *DbExplorer) isTableExists(table string) bool {
+func (db *DbExplorer) tableExists(table string) error {
 	tables, err := db.getTableList()
 	if err != nil {
-		return false
+		return err
 	}
 	for _, t := range tables {
 		if t == table {
-			return true
+			return nil
 		}
 	}
-	return false
+	return errUnknownTable
+}
+
+func (db *DbExplorer) getPK(table string) string {
+	query := fmt.Sprintf("SHOW KEYS FROM %s WHERE Key_name = 'PRIMARY';", table)
+	rows, err := db.db.Query(query)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		item, err := scanStruct(rows)
+		if err != nil {
+			return ""
+		}
+		m := item.(map[string]interface{})
+		if v, ok := m["Column_name"]; ok {
+			col := v.(string)
+			return col
+		}
+
+	}
+	return ""
 }
 
 func (db *DbExplorer) getTableList() ([]string, error) {
@@ -52,8 +75,8 @@ func (db *DbExplorer) getTableList() ([]string, error) {
 }
 
 func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface{}, error) {
-	if !db.isTableExists(table) {
-		return nil, errUnknownTable
+	if err := db.tableExists(table); err != nil {
+		return nil, err
 	}
 	query := fmt.Sprintf("SELECT * FROM %s LIMIT ?, ?", table)
 	if limit == 0 {
@@ -75,35 +98,42 @@ func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface
 	}
 
 	fmt.Println("items:", items)
-
+	fmt.Println("PK:", db.getPK(table))
 	return items, nil
 }
 
+func (db *DbExplorer) itemExists(table, column string, id interface{}) error {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE ? = ?", table)
+	row := db.db.QueryRow(query, column, id)
+	return row.Scan(&count)
+}
+
 func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
-	if !db.isTableExists(table) {
-		return nil, errUnknownTable
+	if err := db.tableExists(table); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
 
 func (db *DbExplorer) deleteItem(table, id string) (int, error) {
-	if !db.isTableExists(table) {
-		return 0, errUnknownTable
+	if err := db.tableExists(table); err != nil {
+		return 0, err
 	}
 	// affected count
 	return 0, nil
 }
 
 func (db *DbExplorer) createItem(table string, a interface{}) (int, error) {
-	if !db.isTableExists(table) {
-		return 0, errUnknownTable
+	if err := db.tableExists(table); err != nil {
+		return 0, err
 	}
 	return 0, nil
 }
 
 func (db *DbExplorer) updateItem(table string, a interface{}) (int, error) {
-	if !db.isTableExists(table) {
-		return 0, errUnknownTable
+	if err := db.tableExists(table); err != nil {
+		return 0, err
 	}
 	return 0, nil
 }
