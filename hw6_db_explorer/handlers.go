@@ -40,7 +40,7 @@ func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	itemsHandlers := map[string]http.HandlerFunc{
-		http.MethodGet:    nil,
+		http.MethodGet:    db.handlerGetItem,
 		http.MethodPost:   nil,
 		http.MethodDelete: nil,
 	}
@@ -136,4 +136,28 @@ func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request)
 
 func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "add item")
+}
+
+func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(r.URL.Path, "/")
+	arr := strings.Split(path, "/")
+
+	table := arr[0]
+	id := arr[1]
+
+	item, err := db.getItem(table, id)
+	if err != nil {
+		if err == errRecordNotFound {
+			handleError(w, err, http.StatusNotFound)
+		} else {
+			handleError(w, err, http.StatusInternalServerError)
+		}
+		return
+	}
+	resp := struct {
+		Record interface{} `json:"record"`
+	}{
+		Record: item,
+	}
+	handleResponse(w, resp)
 }

@@ -102,10 +102,15 @@ func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface
 	return items, nil
 }
 
-func (db *DbExplorer) itemExists(table, column string, id interface{}) error {
+func (db *DbExplorer) itemExists(table string, id interface{}) error {
+	pk := db.getPK(table)
+	if pk == "" {
+		return errRecordNotFound
+	}
+
 	var count int
-	query := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE ? = ?", table)
-	row := db.db.QueryRow(query, column, id)
+	query := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE %s = ?", table, pk)
+	row := db.db.QueryRow(query, id)
 	return row.Scan(&count)
 }
 
@@ -113,7 +118,31 @@ func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
 	if err := db.tableExists(table); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	// if err := db.itemExists(table, id); err != nil {
+	// 	fmt.Println("getItem:", err)
+	// 	return nil, err
+	// }
+	pk := db.getPK(table)
+	if pk == "" {
+		return nil, errRecordNotFound
+	}
+
+	query := fmt.Sprintf("SELECT * FROM %s WHERE %s = ?", table, pk)
+	rows, err := db.db.Query(query, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		item, err := scanStruct(rows)
+		if err != nil {
+			return nil, err
+		}
+		return item, nil
+	}
+
+	return nil, errRecordNotFound
 }
 
 func (db *DbExplorer) deleteItem(table, id string) (int, error) {
