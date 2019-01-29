@@ -96,9 +96,6 @@ func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface
 		}
 		items = append(items, item)
 	}
-
-	fmt.Println("items:", items)
-	fmt.Println("PK:", db.getPK(table))
 	return items, nil
 }
 

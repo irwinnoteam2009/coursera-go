@@ -165,7 +165,6 @@ func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) 
 }
 
 func (db *DbExplorer) handlerDeleteItem(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "delete item")
 	path := strings.Trim(r.URL.Path, "/")
 	arr := strings.Split(path, "/")
 	table := arr[0]
