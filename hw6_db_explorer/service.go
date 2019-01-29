@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -75,9 +76,6 @@ func (db *DbExplorer) getTableList() ([]string, error) {
 }
 
 func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface{}, error) {
-	if err := db.tableExists(table); err != nil {
-		return nil, err
-	}
 	query := fmt.Sprintf("SELECT * FROM %s LIMIT ?, ?", table)
 	if limit == 0 {
 		limit = defaultLimit
@@ -112,13 +110,6 @@ func (db *DbExplorer) itemExists(table string, id interface{}) error {
 }
 
 func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
-	if err := db.tableExists(table); err != nil {
-		return nil, err
-	}
-	// if err := db.itemExists(table, id); err != nil {
-	// 	fmt.Println("getItem:", err)
-	// 	return nil, err
-	// }
 	pk := db.getPK(table)
 	if pk == "" {
 		return nil, errRecordNotFound
@@ -143,9 +134,6 @@ func (db *DbExplorer) getItem(table, id string) (interface{}, error) {
 }
 
 func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
-	if err := db.tableExists(table); err != nil {
-		return 0, err
-	}
 	pk := db.getPK(table)
 	if pk == "" {
 		return 0, nil
@@ -159,16 +147,47 @@ func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
 }
 
 func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
-	if err := db.tableExists(table); err != nil {
+	// get ctable column list
+	rows, err := db.db.Query("SELECT * FROM " + table + " LIMIT 1")
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
 		return 0, err
 	}
 
-	return 0, nil
+	m, ok := a.(map[string]interface{})
+	if !ok {
+		return 0, errors.New("something wrong")
+	}
+	// create column set, params and query values
+	values := make([]interface{}, 0)
+	var columns, params string
+	for _, c := range cols {
+		if v, ok := m[c]; ok {
+			columns += ", " + c
+			params += ", ?"
+			values = append(values, v)
+		}
+	}
+	if len(columns) != 0 {
+		columns = columns[1:]
+		params = params[1:]
+	}
+
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", table, columns, params)
+	fmt.Println(query)
+
+	result, err := db.db.Exec(query, values...)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
 }
 
 func (db *DbExplorer) updateItem(table string, a interface{}) (int64, error) {
-	if err := db.tableExists(table); err != nil {
-		return 0, err
-	}
 	return 0, nil
 }

@@ -9,8 +9,17 @@ GET {{server}}/items
     ?offset=0
     &limit=3
 ### ITEM INFO
-GET {{server}}/items/1
+GET {{server}}/items/42
 ### ITEM NOT FOUND
 GET {{server}}/items/100500
 ### DELETE ITEM
 DELETE {{server}}/items/3
+### INSERT ITEM
+PUT {{server}}/items
+Content-Type: application/json
+
+{
+    "id": 42,
+    "title": "db_crud", 
+    "description": ""
+}

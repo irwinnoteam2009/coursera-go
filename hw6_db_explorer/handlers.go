@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +52,15 @@ func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		path := strings.Trim(r.URL.Path, "/")
 		arr := strings.Split(path, "/")
+
+		if err := db.tableExists(arr[0]); err != nil {
+			if err == errUnknownTable {
+				handleError(w, err, http.StatusNotFound)
+			} else {
+				handleError(w, err, http.StatusInternalServerError)
+			}
+			return
+		}
 
 		switch len(arr) {
 		case 1:
@@ -134,7 +144,34 @@ func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request)
 }
 
 func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "add item")
+	path := strings.Trim(r.URL.Path, "/")
+	arr := strings.Split(path, "/")
+	table := arr[0]
+
+	var a interface{}
+	data, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := json.Unmarshal(data, &a); err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	affected, err := db.createItem(table, a)
+	pk := db.getPK(table)
+	if err != nil || pk == "" {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]int64{
+		pk: affected,
+	}
+	handleResponse(w, resp)
 }
 
 func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
