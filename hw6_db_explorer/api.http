@@ -24,9 +24,10 @@ Content-Type: application/json
     "description": ""
 }
 ### UPDATE ITEM
-POST {{server}}/items/3
+POST {{server}}/items/9
 Content-Type: application/json
 
 {
+    "updated": null,
     "description": "Написать программу db_crud"
 }

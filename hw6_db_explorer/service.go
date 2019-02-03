@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 )
+
+var errSomethingWrong = errors.New("something wrong")
 
 const (
 	defaultLimit  = 5
@@ -13,10 +16,11 @@ const (
 )
 
 type tableInfo struct {
-	Field string
-	Type  string
-	Null  bool
-	PK    bool
+	Field       string
+	Type        string
+	ReflectType reflect.Type
+	Null        bool
+	PK          bool
 }
 
 // DbExplorer ...
@@ -46,6 +50,11 @@ func (db *DbExplorer) loadTableInfo(table string) error {
 	}
 	defer rows.Close()
 
+	fields, ok := db.tables[table]
+	if !ok {
+		return errUnknownTable
+	}
+
 	for rows.Next() {
 		var collation, defaultValue *string
 		var null, key, extra, privs, comment string
@@ -56,14 +65,32 @@ func (db *DbExplorer) loadTableInfo(table string) error {
 		info.Null = null == "YES"
 		info.PK = key == "PRI" && extra == "auto_increment"
 
-		infos, ok := db.tables[table]
-		if !ok {
-			return errUnknownTable
-		}
-		infos[info.Field] = info
-		// infos = append(infos, info)
-		db.tables[table] = infos
+		fields[info.Field] = info
 	}
+
+	// load reflect type for column
+	query = fmt.Sprintf("SELECT * FROM %s LIMIT 1", table)
+	rows, err = db.db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// cols, err := rows.ColumnTypes()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// for _, col := range cols {
+	// 	info, ok := fields[col.Name()]
+	// 	if !ok {
+	// 		continue
+	// 	}
+	// 	info.ReflectType = col.ScanType()
+	// 	fields[col.Name()] = info
+	// }
+
+	// fmt.Println(fields)
 
 	return nil
 }
@@ -100,9 +127,9 @@ func (db *DbExplorer) tableExists(table string) error {
 }
 
 func (db *DbExplorer) getPK(table string) string {
-	infos := db.tables[table]
-	for k, v := range infos {
-		if v.PK {
+	fields := db.tables[table]
+	for k, info := range fields {
+		if info.PK {
 			return k
 		}
 	}
@@ -191,13 +218,13 @@ func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
 func (db *DbExplorer) generateInsertUpdateQuery(table string, a interface{}) (columns []string, values []interface{}, err error) {
 	m, ok := a.(map[string]interface{})
 	if !ok {
-		return nil, nil, errors.New("something wrong")
+		return nil, nil, errSomethingWrong
 	}
 
-	infos := db.tables[table]
-	for _, info := range infos {
-		if v, ok := m[info.Field]; ok {
-			columns = append(columns, info.Field)
+	fields := db.tables[table]
+	for field := range fields {
+		if v, ok := m[field]; ok {
+			columns = append(columns, field)
 			values = append(values, v)
 		}
 	}
@@ -233,7 +260,9 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 	// create query
 	columns := strings.Join(cols, ", ")
 	params := strings.Repeat(", ?", len(cols))
-	params = params[1:]
+	if len(cols) > 1 {
+		params = params[1:]
+	}
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", table, columns, params)
 	// fmt.Println(query)
 
@@ -245,6 +274,11 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 }
 
 func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error) {
+	m, ok := a.(map[string]interface{})
+	if !ok {
+		return 0, errSomethingWrong
+	}
+
 	pk := db.getPK(table)
 	if pk == "" {
 		return 0, nil
@@ -255,17 +289,46 @@ func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error)
 		return 0, err
 	}
 
-	//check types
-	// for i, col := range cols {
+	// check types
+	fields := db.tables[table]
+	for _, col := range cols {
+		field, ok := fields[col]
+		err := fmt.Errorf("field %s have invalid type", col)
 
-	// }
+		if !ok {
+			continue
+		}
+
+		if field.PK {
+			return 0, err
+		}
+
+		switch t := m[col].(type) {
+		case int:
+			if !strings.Contains(field.Type, "int") {
+				return 0, err
+			}
+		case string:
+			if !strings.Contains(field.Type, "varchar") && !strings.Contains(field.Type, "text") {
+				return 0, err
+			}
+		case float32, float64:
+			if !strings.Contains(field.Type, "float") && !strings.Contains(field.Type, "double") {
+				return 0, err
+			}
+		case nil:
+			if !field.Null {
+				return 0, err
+			}
+		default:
+			fmt.Printf("type: %s %T\n", field.Type, t)
+		}
+	}
 
 	columns := strings.Join(cols, " = ?, ")
-	columns = columns[:len(columns)-2]
+	columns += " = ? "
 
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?", table, columns, pk)
-	fmt.Println(query)
-
 	values = append(values, id)
 	result, err := db.db.Exec(query, values...)
 	if err != nil {
