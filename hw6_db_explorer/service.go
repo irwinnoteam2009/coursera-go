@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -186,40 +187,54 @@ func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
-func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
-	// get ctable column list
-	rows, err := db.db.Query("SELECT * FROM " + table + " LIMIT 1")
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return 0, err
-	}
-
+func (db *DbExplorer) generateInsertUpdateQuery(table string, a interface{}) (columns []string, values []interface{}, err error) {
 	m, ok := a.(map[string]interface{})
 	if !ok {
-		return 0, errors.New("something wrong")
+		return nil, nil, errors.New("something wrong")
 	}
-	// create column set, params and query values
-	values := make([]interface{}, 0)
-	var columns, params string
-	for _, c := range cols {
-		if v, ok := m[c]; ok {
-			columns += ", " + c
-			params += ", ?"
+
+	infos := db.tables[table]
+	for _, info := range infos {
+		if v, ok := m[info.Field]; ok {
+			columns = append(columns, info.Field)
 			values = append(values, v)
 		}
 	}
-	if len(columns) != 0 {
-		columns = columns[1:]
-		params = params[1:]
+	return
+}
+
+func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
+	pk := db.getPK(table)
+	if pk == "" {
+		return 0, nil
 	}
 
+	cols, values, err := db.generateInsertUpdateQuery(table, a)
+	if err != nil || len(cols) == 0 {
+		return 0, err
+	}
+
+	// remove from cols PK field
+	var index int
+	var find bool
+	for i, col := range cols {
+		index = i
+		if col == pk {
+			find = true
+			break
+		}
+	}
+	if find {
+		cols = append(cols[:index], cols[index+1:]...)
+		values = append(values[:index], values[index+1:]...)
+	}
+
+	// create query
+	columns := strings.Join(cols, ", ")
+	params := strings.Repeat(", ?", len(cols))
+	params = params[1:]
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", table, columns, params)
-	fmt.Println(query)
+	// fmt.Println(query)
 
 	result, err := db.db.Exec(query, values...)
 	if err != nil {
@@ -228,6 +243,32 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 	return result.LastInsertId()
 }
 
-func (db *DbExplorer) updateItem(table string, a interface{}) (int64, error) {
-	return 0, nil
+func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error) {
+	pk := db.getPK(table)
+	if pk == "" {
+		return 0, nil
+	}
+
+	cols, values, err := db.generateInsertUpdateQuery(table, a)
+	if err != nil || len(cols) == 0 {
+		return 0, err
+	}
+
+	// check types
+	// for i, col := range cols {
+
+	// }
+
+	columns := strings.Join(cols, " = ?, ")
+	columns = columns[:len(columns)-2]
+
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?", table, columns, pk)
+	fmt.Println(query)
+
+	values = append(values, id)
+	result, err := db.db.Exec(query, values...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

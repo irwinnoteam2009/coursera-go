@@ -198,7 +198,36 @@ func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "update item")
+	path := strings.Trim(r.URL.Path, "/")
+	arr := strings.Split(path, "/")
+	table := arr[0]
+	id := arr[1]
+
+	var a interface{}
+	data, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := json.Unmarshal(data, &a); err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	i, err := db.updateItem(table, id, a)
+	if err != nil {
+		handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	resp := struct {
+		Updated int64 `json:"updated"`
+	}{
+		Updated: i,
+	}
+	handleResponse(w, resp)
 }
 
 func (db *DbExplorer) handlerDeleteItem(w http.ResponseWriter, r *http.Request) {

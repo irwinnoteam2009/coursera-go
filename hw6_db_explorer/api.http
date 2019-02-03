@@ -9,7 +9,7 @@ GET {{server}}/items
     ?offset=0
     &limit=3
 ### ITEM INFO
-GET {{server}}/items/42
+GET {{server}}/items/3
 ### ITEM NOT FOUND
 GET {{server}}/items/100500
 ### DELETE ITEM
@@ -22,4 +22,11 @@ Content-Type: application/json
     "id": 42,
     "title": "db_crud", 
     "description": ""
+}
+### UPDATE ITEM
+POST {{server}}/items/3
+Content-Type: application/json
+
+{
+    "description": "Написать программу db_crud"
 }
