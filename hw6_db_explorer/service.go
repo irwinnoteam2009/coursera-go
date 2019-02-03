@@ -22,14 +22,14 @@ type tableInfo struct {
 // DbExplorer ...
 type DbExplorer struct {
 	db     *sql.DB
-	tables map[string][]tableInfo
+	tables map[string]map[string]tableInfo
 }
 
 // NewDbExplorer creates dbexplorer
 func NewDbExplorer(db *sql.DB) (*DbExplorer, error) {
 	res := &DbExplorer{
 		db:     db,
-		tables: make(map[string][]tableInfo),
+		tables: make(map[string]map[string]tableInfo),
 	}
 
 	if err := res.loadTables(); err != nil {
@@ -60,7 +60,8 @@ func (db *DbExplorer) loadTableInfo(table string) error {
 		if !ok {
 			return errUnknownTable
 		}
-		infos = append(infos, info)
+		infos[info.Field] = info
+		// infos = append(infos, info)
 		db.tables[table] = infos
 	}
 
@@ -79,7 +80,7 @@ func (db *DbExplorer) loadTables() error {
 		if err := rows.Scan(&table); err != nil {
 			return err
 		}
-		db.tables[table] = make([]tableInfo, 0)
+		db.tables[table] = make(map[string]tableInfo)
 	}
 
 	for table := range db.tables {
@@ -100,9 +101,9 @@ func (db *DbExplorer) tableExists(table string) error {
 
 func (db *DbExplorer) getPK(table string) string {
 	infos := db.tables[table]
-	for _, info := range infos {
-		if info.PK {
-			return info.Field
+	for k, v := range infos {
+		if v.PK {
+			return k
 		}
 	}
 	return ""
@@ -214,7 +215,7 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 		return 0, err
 	}
 
-	// remove from cols PK field
+	// remove PK field from cols
 	var index int
 	var find bool
 	for i, col := range cols {
@@ -254,7 +255,7 @@ func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error)
 		return 0, err
 	}
 
-	// check types
+	//check types
 	// for i, col := range cols {
 
 	// }
