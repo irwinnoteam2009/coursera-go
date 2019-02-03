@@ -11,68 +11,108 @@ const (
 	defaultOffset = 0
 )
 
+type tableInfo struct {
+	Field string
+	Type  string
+	Null  bool
+	PK    bool
+}
+
 // DbExplorer ...
 type DbExplorer struct {
-	db *sql.DB
+	db     *sql.DB
+	tables map[string][]tableInfo
 }
 
 // NewDbExplorer creates dbexplorer
 func NewDbExplorer(db *sql.DB) (*DbExplorer, error) {
-	return &DbExplorer{db: db}, nil
+	res := &DbExplorer{
+		db:     db,
+		tables: make(map[string][]tableInfo),
+	}
+
+	if err := res.loadTables(); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
-func (db *DbExplorer) tableExists(table string) error {
-	tables, err := db.getTableList()
-	if err != nil {
-		return err
-	}
-	for _, t := range tables {
-		if t == table {
-			return nil
-		}
-	}
-	return errUnknownTable
-}
-
-func (db *DbExplorer) getPK(table string) string {
-	query := fmt.Sprintf("SHOW KEYS FROM %s WHERE Key_name = 'PRIMARY';", table)
+func (db *DbExplorer) loadTableInfo(table string) error {
+	query := fmt.Sprintf("SHOW FULL COLUMNS FROM %s;", table)
 	rows, err := db.db.Query(query)
 	if err != nil {
-		return ""
+		return err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		item, err := scanStruct(rows)
-		if err != nil {
-			return ""
+		var collation, defaultValue *string
+		var null, key, extra, privs, comment string
+		info := tableInfo{}
+		if err := rows.Scan(&info.Field, &info.Type, &collation, &null, &key, &defaultValue, &extra, &privs, &comment); err != nil {
+			return err
 		}
-		m := item.(map[string]interface{})
-		if v, ok := m["Column_name"]; ok {
-			col := v.(string)
-			return col
-		}
+		info.Null = null == "YES"
+		info.PK = key == "PRI" && extra == "auto_increment"
 
+		infos, ok := db.tables[table]
+		if !ok {
+			return errUnknownTable
+		}
+		infos = append(infos, info)
+		db.tables[table] = infos
+	}
+
+	return nil
+}
+
+func (db *DbExplorer) loadTables() error {
+	rows, err := db.db.Query("SHOW TABLES;")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			return err
+		}
+		db.tables[table] = make([]tableInfo, 0)
+	}
+
+	for table := range db.tables {
+		if err := db.loadTableInfo(table); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (db *DbExplorer) tableExists(table string) error {
+	if _, ok := db.tables[table]; !ok {
+		return errUnknownTable
+	}
+	return nil
+}
+
+func (db *DbExplorer) getPK(table string) string {
+	infos := db.tables[table]
+	for _, info := range infos {
+		if info.PK {
+			return info.Field
+		}
 	}
 	return ""
 }
 
 func (db *DbExplorer) getTableList() ([]string, error) {
-	rows, err := db.db.Query("SHOW TABLES;")
-	if err != nil {
-		return nil, err
+	res := make([]string, 0, len(db.tables))
+	for table := range db.tables {
+		res = append(res, table)
 	}
-	defer rows.Close()
-
-	tables := make([]string, 0)
-	for rows.Next() {
-		var table string
-		if err := rows.Scan(&table); err != nil {
-			return nil, err
-		}
-		tables = append(tables, table)
-	}
-	return tables, nil
+	return res, nil
 }
 
 func (db *DbExplorer) getItemsList(table string, limit, offset int) ([]interface{}, error) {
