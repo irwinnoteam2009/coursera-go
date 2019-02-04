@@ -3,8 +3,45 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"reflect"
 )
+
+type myValue struct {
+	valid bool
+	value interface{}
+}
+
+func (m *myValue) Scan(v interface{}) error {
+	switch v.(type) {
+	case int:
+		if value, ok := v.(int); ok {
+			m.valid = true
+			m.value = value
+		}
+	case int64:
+		if value, ok := v.(int64); ok {
+			m.valid = true
+			m.value = value
+		}
+	case float64:
+		if value, ok := v.(float64); ok {
+			m.valid = true
+			m.value = value
+		}
+	case []byte:
+		if value, ok := v.([]byte); ok {
+			m.valid = true
+			m.value = string(value)
+		}
+	case string:
+		if value, ok := v.(string); ok {
+			fmt.Println(value)
+		}
+	case nil:
+		m.valid = true
+		m.value = nil
+	}
+	return nil
+}
 
 func scanStruct(r *sql.Rows) (interface{}, error) {
 	a := make(map[string]interface{})
@@ -13,14 +50,10 @@ func scanStruct(r *sql.Rows) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	types, err := r.ColumnTypes()
-	if err != nil {
-		return nil, err
-	}
 
 	values := make([]interface{}, len(columns))
 	for i := range values {
-		values[i] = reflect.New(types[i].ScanType()).Interface()
+		values[i] = new(myValue)
 	}
 
 	if err := r.Scan(values...); err != nil {
@@ -28,17 +61,13 @@ func scanStruct(r *sql.Rows) (interface{}, error) {
 	}
 
 	for i, col := range columns {
-		switch v := values[i].(type) {
-		case *int, *int8, *int16, *int32, *float32, *float64:
-			a[col] = v
-		case *sql.RawBytes:
-			a[col] = nil
-			if len(*v) != 0 {
-				a[col] = string(*v)
-			}
-		default:
-			fmt.Printf("%s: %T\n", col, v)
+		v, ok := values[i].(*myValue)
+		if !ok || !v.valid {
+			continue
 		}
+		a[col] = v.value
+
+		fmt.Printf("%s: %T %+v\n", col, values[i], values[i])
 	}
 
 	return a, nil
