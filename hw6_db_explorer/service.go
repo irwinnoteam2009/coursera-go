@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 )
 
@@ -15,12 +14,24 @@ const (
 	defaultOffset = 0
 )
 
+type typeError struct {
+	field string
+}
+
+func (e *typeError) Error() string {
+	return fmt.Sprintf("field %s have invalid type", e.field)
+}
+
+func newTypeError(field string) error {
+	return &typeError{field: field}
+}
+
 type tableInfo struct {
-	Field       string
-	Type        string
-	ReflectType reflect.Type
-	Null        bool
-	PK          bool
+	Field   string
+	Type    string
+	Null    bool
+	Default *string
+	PK      bool
 }
 
 // DbExplorer ...
@@ -56,10 +67,10 @@ func (db *DbExplorer) loadTableInfo(table string) error {
 	}
 
 	for rows.Next() {
-		var collation, defaultValue *string
+		var collation *string
 		var null, key, extra, privs, comment string
 		info := tableInfo{}
-		if err := rows.Scan(&info.Field, &info.Type, &collation, &null, &key, &defaultValue, &extra, &privs, &comment); err != nil {
+		if err := rows.Scan(&info.Field, &info.Type, &collation, &null, &key, &info.Default, &extra, &privs, &comment); err != nil {
 			return err
 		}
 		info.Null = null == "YES"
@@ -67,28 +78,6 @@ func (db *DbExplorer) loadTableInfo(table string) error {
 
 		fields[info.Field] = info
 	}
-
-	// load reflect type for column
-	query = fmt.Sprintf("SELECT * FROM %s LIMIT 1", table)
-	rows, err = db.db.Query(query)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	// cols, err := rows.ColumnTypes()
-	// if err != nil {
-	// 	return err
-	// }
-
-	// for _, col := range cols {
-	// 	info, ok := fields[col.Name()]
-	// 	if !ok {
-	// 		continue
-	// 	}
-	// 	info.ReflectType = col.ScanType()
-	// 	fields[col.Name()] = info
-	// }
 
 	// fmt.Println(fields)
 
@@ -264,7 +253,7 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 		params = params[1:]
 	}
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", table, columns, params)
-	// fmt.Println(query)
+	fmt.Println(query)
 
 	result, err := db.db.Exec(query, values...)
 	if err != nil {
@@ -293,7 +282,7 @@ func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error)
 	fields := db.tables[table]
 	for _, col := range cols {
 		field, ok := fields[col]
-		err := fmt.Errorf("field %s have invalid type", col)
+		err := newTypeError(col) //fmt.Errorf("field %s have invalid type", col)
 
 		if !ok {
 			continue
