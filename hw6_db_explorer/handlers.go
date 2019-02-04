@@ -218,7 +218,11 @@ func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) 
 
 	i, err := db.updateItem(table, id, a)
 	if err != nil {
-		handleError(w, err, http.StatusInternalServerError)
+		if _, ok := err.(*typeError); ok {
+			handleError(w, err, http.StatusBadRequest)
+		} else {
+			handleError(w, err, http.StatusInternalServerError)
+		}
 		return
 	}
 
