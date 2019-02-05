@@ -67,7 +67,7 @@ func scanStruct(r *sql.Rows) (interface{}, error) {
 		}
 		a[col] = v.value
 
-		fmt.Printf("%s: %T %+v\n", col, values[i], values[i])
+		// fmt.Printf("%s: %T %+v\n", col, values[i], values[i])
 	}
 
 	return a, nil

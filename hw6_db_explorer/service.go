@@ -204,12 +204,7 @@ func (db *DbExplorer) deleteItem(table, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
-func (db *DbExplorer) generateInsertUpdateQuery(table string, a interface{}) (columns []string, values []interface{}, err error) {
-	m, ok := a.(map[string]interface{})
-	if !ok {
-		return nil, nil, errSomethingWrong
-	}
-
+func (db *DbExplorer) generateInsertUpdateQuery(table string, m map[string]interface{}) (columns []string, values []interface{}, err error) {
 	fields := db.tables[table]
 	for field := range fields {
 		if v, ok := m[field]; ok {
@@ -220,13 +215,47 @@ func (db *DbExplorer) generateInsertUpdateQuery(table string, a interface{}) (co
 	return
 }
 
+func (db *DbExplorer) checkDefaults(table string, m map[string]interface{}) (cols []string, values []interface{}) {
+	fields := db.tables[table]
+
+	for k, field := range fields {
+		if field.PK || field.Null {
+			continue
+		}
+		if field.Default == nil {
+			if _, ok := m[k]; !ok {
+				cols = append(cols, k)
+				if strings.Contains(field.Type, "int") {
+					var v int
+					values = append(values, v)
+				}
+				if strings.Contains(field.Type, "varchar") || strings.Contains(field.Type, "text") {
+					var v string
+					values = append(values, v)
+				}
+				if strings.Contains(field.Type, "float") || strings.Contains(field.Type, "double") {
+					var v float64
+					values = append(values, v)
+				}
+			}
+		}
+	}
+
+	return
+}
+
 func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
+	m, ok := a.(map[string]interface{})
+	if !ok {
+		return 0, errSomethingWrong
+	}
+
 	pk := db.getPK(table)
 	if pk == "" {
 		return 0, nil
 	}
 
-	cols, values, err := db.generateInsertUpdateQuery(table, a)
+	cols, values, err := db.generateInsertUpdateQuery(table, m)
 	if err != nil || len(cols) == 0 {
 		return 0, err
 	}
@@ -246,6 +275,12 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 		values = append(values[:index], values[index+1:]...)
 	}
 
+	defCols, defValues := db.checkDefaults(table, m)
+	if defCols != nil && defValues != nil {
+		cols = append(cols, defCols...)
+		values = append(values, defValues...)
+	}
+
 	// create query
 	columns := strings.Join(cols, ", ")
 	params := strings.Repeat(", ?", len(cols))
@@ -262,6 +297,45 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 	return result.LastInsertId()
 }
 
+func (db *DbExplorer) checkFields(table, pk string, cols []string, m map[string]interface{}) error {
+	fields := db.tables[table]
+
+	for _, col := range cols {
+		field, ok := fields[col]
+		err := newTypeError(col) //fmt.Errorf("field %s have invalid type", col)
+
+		if !ok {
+			continue
+		}
+
+		if field.PK {
+			return err
+		}
+
+		switch t := m[col].(type) {
+		case int:
+			if !strings.Contains(field.Type, "int") {
+				return err
+			}
+		case string:
+			if !strings.Contains(field.Type, "varchar") && !strings.Contains(field.Type, "text") {
+				return err
+			}
+		case float32, float64:
+			if !strings.Contains(field.Type, "float") && !strings.Contains(field.Type, "double") {
+				return err
+			}
+		case nil:
+			if !field.Null {
+				return err
+			}
+		default:
+			fmt.Printf("type: %s %T\n", field.Type, t)
+		}
+	}
+	return nil
+}
+
 func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error) {
 	m, ok := a.(map[string]interface{})
 	if !ok {
@@ -273,45 +347,13 @@ func (db *DbExplorer) updateItem(table, id string, a interface{}) (int64, error)
 		return 0, nil
 	}
 
-	cols, values, err := db.generateInsertUpdateQuery(table, a)
+	cols, values, err := db.generateInsertUpdateQuery(table, m)
 	if err != nil || len(cols) == 0 {
 		return 0, err
 	}
 
-	// check types
-	fields := db.tables[table]
-	for _, col := range cols {
-		field, ok := fields[col]
-		err := newTypeError(col) //fmt.Errorf("field %s have invalid type", col)
-
-		if !ok {
-			continue
-		}
-
-		if field.PK {
-			return 0, err
-		}
-
-		switch t := m[col].(type) {
-		case int:
-			if !strings.Contains(field.Type, "int") {
-				return 0, err
-			}
-		case string:
-			if !strings.Contains(field.Type, "varchar") && !strings.Contains(field.Type, "text") {
-				return 0, err
-			}
-		case float32, float64:
-			if !strings.Contains(field.Type, "float") && !strings.Contains(field.Type, "double") {
-				return 0, err
-			}
-		case nil:
-			if !field.Null {
-				return 0, err
-			}
-		default:
-			fmt.Printf("type: %s %T\n", field.Type, t)
-		}
+	if err := db.checkFields(table, pk, cols, m); err != nil {
+		return 0, err
 	}
 
 	columns := strings.Join(cols, " = ?, ")

@@ -79,13 +79,14 @@ func handleError(w http.ResponseWriter, err error, code int) {
 	resp := response{
 		Error: err.Error(),
 	}
+	fmt.Println("handleError:", err)
+
 	b, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Println("handleError:", err)
 	http.Error(w, string(b), code)
 }
 
