@@ -2,29 +2,14 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 )
-
-var errSomethingWrong = errors.New("something wrong")
 
 const (
 	defaultLimit  = 5
 	defaultOffset = 0
 )
-
-type typeError struct {
-	field string
-}
-
-func (e *typeError) Error() string {
-	return fmt.Sprintf("field %s have invalid type", e.field)
-}
-
-func newTypeError(field string) error {
-	return &typeError{field: field}
-}
 
 type tableInfo struct {
 	Field   string
@@ -275,6 +260,7 @@ func (db *DbExplorer) createItem(table string, a interface{}) (int64, error) {
 		values = append(values[:index], values[index+1:]...)
 	}
 
+	// add default values for non-default fields
 	defCols, defValues := db.checkDefaults(table, m)
 	if defCols != nil && defValues != nil {
 		cols = append(cols, defCols...)

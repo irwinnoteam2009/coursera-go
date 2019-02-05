@@ -2,17 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
-)
-
-var (
-	errUnknownTable   = errors.New("unknown table")
-	errRecordNotFound = errors.New("record not found")
 )
 
 const (
@@ -31,16 +25,18 @@ func (r *response) String() string {
 	return string(data)
 }
 
+type handlerFunc func(table, id string, w http.ResponseWriter, r *http.Request)
+
 // ServeHTTP ...
 func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	tableHandlers := map[string]http.HandlerFunc{
+	tableHandlers := map[string]handlerFunc{
 		http.MethodGet: db.handlerGetItemList,
 		http.MethodPut: db.handlerAddItem,
 	}
 
-	itemsHandlers := map[string]http.HandlerFunc{
+	itemsHandlers := map[string]handlerFunc{
 		http.MethodGet:    db.handlerGetItem,
 		http.MethodPost:   db.handlerUpdateItem,
 		http.MethodDelete: db.handlerDeleteItem,
@@ -52,8 +48,13 @@ func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		path := strings.Trim(r.URL.Path, "/")
 		arr := strings.Split(path, "/")
+		table := arr[0]
+		var id string
+		if len(arr) > 1 {
+			id = arr[1]
+		}
 
-		if err := db.tableExists(arr[0]); err != nil {
+		if err := db.tableExists(table); err != nil {
 			if err == errUnknownTable {
 				handleError(w, err, http.StatusNotFound)
 			} else {
@@ -62,15 +63,14 @@ func (db *DbExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		switch len(arr) {
-		case 1:
-			if handler, ok := tableHandlers[r.Method]; ok && handler != nil {
-				handler(w, r)
-			}
-		case 2:
-			if handler, ok := itemsHandlers[r.Method]; ok && handler != nil {
-				handler(w, r)
-			}
+		var handler handlerFunc
+		if len(arr) == 1 {
+			handler = tableHandlers[r.Method]
+		} else {
+			handler = itemsHandlers[r.Method]
+		}
+		if handler != nil {
+			handler(table, id, w, r)
 		}
 	}
 }
@@ -79,7 +79,7 @@ func handleError(w http.ResponseWriter, err error, code int) {
 	resp := response{
 		Error: err.Error(),
 	}
-	fmt.Println("handleError:", err)
+	// fmt.Println("handleError:", err)
 
 	b, err := json.Marshal(resp)
 	if err != nil {
@@ -97,7 +97,6 @@ func handleResponse(w http.ResponseWriter, a interface{}) {
 	b, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		fmt.Println("handleResponse:", err)
 		return
 	}
 	fmt.Fprintln(w, string(b))
@@ -117,9 +116,7 @@ func (db *DbExplorer) handlerGetTables(w http.ResponseWriter, r *http.Request) {
 	handleResponse(w, resp)
 }
 
-func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request) {
-	table := strings.Trim(r.URL.Path, "/")
-
+func (db *DbExplorer) handlerGetItemList(table, id string, w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	sLimit := query.Get(paramLimit)
 	sOffset := query.Get(paramOffset)
@@ -128,11 +125,7 @@ func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request)
 
 	data, err := db.getItemsList(table, limit, offset)
 	if err != nil {
-		if err == errUnknownTable {
-			handleError(w, err, http.StatusNotFound)
-		} else {
-			handleError(w, err, http.StatusInternalServerError)
-		}
+		handleError(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -144,11 +137,7 @@ func (db *DbExplorer) handlerGetItemList(w http.ResponseWriter, r *http.Request)
 	handleResponse(w, resp)
 }
 
-func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(r.URL.Path, "/")
-	arr := strings.Split(path, "/")
-	table := arr[0]
-
+func (db *DbExplorer) handlerAddItem(table, id string, w http.ResponseWriter, r *http.Request) {
 	var a interface{}
 	data, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -175,12 +164,7 @@ func (db *DbExplorer) handlerAddItem(w http.ResponseWriter, r *http.Request) {
 	handleResponse(w, resp)
 }
 
-func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(r.URL.Path, "/")
-	arr := strings.Split(path, "/")
-	table := arr[0]
-	id := arr[1]
-
+func (db *DbExplorer) handlerGetItem(table, id string, w http.ResponseWriter, r *http.Request) {
 	item, err := db.getItem(table, id)
 	if err != nil {
 		if err == errRecordNotFound {
@@ -198,12 +182,7 @@ func (db *DbExplorer) handlerGetItem(w http.ResponseWriter, r *http.Request) {
 	handleResponse(w, resp)
 }
 
-func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(r.URL.Path, "/")
-	arr := strings.Split(path, "/")
-	table := arr[0]
-	id := arr[1]
-
+func (db *DbExplorer) handlerUpdateItem(table, id string, w http.ResponseWriter, r *http.Request) {
 	var a interface{}
 	data, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -235,12 +214,7 @@ func (db *DbExplorer) handlerUpdateItem(w http.ResponseWriter, r *http.Request) 
 	handleResponse(w, resp)
 }
 
-func (db *DbExplorer) handlerDeleteItem(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(r.URL.Path, "/")
-	arr := strings.Split(path, "/")
-	table := arr[0]
-	id := arr[1]
-
+func (db *DbExplorer) handlerDeleteItem(table, id string, w http.ResponseWriter, r *http.Request) {
 	i, err := db.deleteItem(table, id)
 	if err != nil {
 		handleError(w, err, http.StatusInternalServerError)
